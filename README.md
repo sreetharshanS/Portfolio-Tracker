@@ -7,9 +7,10 @@ A premium personal wealth and investment portfolio tracker designed for private 
 - Holdings management with search and category grouping
 - Transaction ledger and accounting assumptions
 - CSV/Excel import workflow with validation and preview
-- Six default wealth milestones seeded into the app
+- Eight default wealth milestones seeded into the app
 - Asset allocation targets and progress views
 - Supabase email/password authentication and user-isolated portfolio storage
+- Fundamental stock screener for Screener.in CSV exports
 - Dashboard quotes for NIFTY 50, Sensex, and NIFTY Bank
 - Local demo mode when Supabase credentials are not configured
 
@@ -40,7 +41,10 @@ Existing project schemas: if `001_init.sql` was already run, do not run it again
 When Supabase credentials are absent, the app has a demo sign-in and local browser storage. That mode is not an account and does not sync to Supabase.
 
 ## Market index quotes
-The dashboard checks Yahoo Finance chart quotes for `^NSEI` (NIFTY 50), `^BSESN` (Sensex), and `^NSEBANK` (NIFTY Bank) every 60 seconds through the Vite development proxy. The free feed returned HTTP 429 (rate limited) during verification, so one-second fetching is not reliable or appropriate for this provider. Quotes are indicative, may be delayed, and are not an exchange-authorized real-time feed. Production hosting requires a server-side proxy/provider because the Vite proxy is development-only.
+The dashboard checks Yahoo Finance chart quotes for `^NSEI` (NIFTY 50), `^BSESN` (Sensex), and `^NSEBANK` (NIFTY Bank) every 60 seconds. Local development uses the Vite proxy; Vercel deployments use the `/api/finance` serverless function to proxy those requests to Yahoo Finance. The free feed may return HTTP 429 when rate limited, so quotes can temporarily be unavailable. Quotes are indicative, may be delayed, and are not an exchange-authorized real-time feed.
+
+## Fundamental stock screener
+The Screener tab filters Screener.in CSV exports for market capitalization > ₹500 Cr, 3-year sales growth > 12%, 3-year profit growth > 15%, ROCE > 15%, ROE > 15%, P/E < 30, debt/equity < 0.5, interest coverage > 3, and promoter pledge = 0%. Export a CSV from Screener.in with all nine metric columns and upload it in the tab. The app filters the supplied data locally; it does not scrape or authenticate to Screener.in, whose custom screens require a signed-in account. Import dates are shown so users can judge the freshness of the source data.
 
 ## Scripts
 - `npm run dev` – local development

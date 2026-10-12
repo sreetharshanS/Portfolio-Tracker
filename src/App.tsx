@@ -73,6 +73,8 @@ import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { usePortfolio } from './hooks/usePortfolio'
 import { StockScannerView } from './components/StockScannerView'
 import { MarketIndicesPanel } from './components/MarketIndicesPanel'
+import { GlobalSearch } from './components/GlobalSearch'
+import { FundamentalScreenerView } from './components/FundamentalScreenerView'
 import { MarketDataService } from './services/marketDataService'
 import type { AssetCategory, Holding, Transaction, TransactionType } from './types/portfolio'
 import type { ScannedStock } from './types/scanner'
@@ -81,7 +83,8 @@ import type { Session } from '@supabase/supabase-js'
 const navigation = [
   'Dashboard',
   'My Holdings',
-  'Performance',
+  'Transactions',
+  'Screener',
   '52W High / Low Scanner',
   'Asset Allocation',
   'Wealth Milestones',
@@ -91,6 +94,13 @@ const navigation = [
 ] as const
 
 type NavigationTab = (typeof navigation)[number]
+
+const navigationGroups: { label: string; items: readonly NavigationTab[] }[] = [
+  { label: 'Portfolio', items: ['Dashboard', 'My Holdings', 'Transactions'] },
+  { label: 'Explore', items: ['Screener', '52W High / Low Scanner'] },
+  { label: 'Plan', items: ['Asset Allocation', 'Wealth Milestones', 'Portfolio History'] },
+  { label: 'Manage', items: ['Import Holdings', 'Settings'] },
+]
 
 const categoryColors: Record<AssetCategory, string> = {
   'Indian Stocks': '#2563eb',
@@ -120,8 +130,10 @@ function getNavIcon(item: NavigationTab) {
       return HiOutlineSquares2X2
     case 'My Holdings':
       return HiOutlineBriefcase
-    case 'Performance':
-      return HiOutlineArrowTrendingUp
+    case 'Transactions':
+      return HiOutlineArrowsRightLeft
+    case 'Screener':
+      return HiOutlineChartBar
     case '52W High / Low Scanner':
       return HiOutlineMagnifyingGlass
     case 'Asset Allocation':
@@ -183,6 +195,8 @@ function App() {
   const [page, setPage] = useState<NavigationTab>('Dashboard')
   const [selectedHoldingId, setSelectedHoldingId] = useState<string | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   // 52W High / Low Scanner State
   const [watchlist, setWatchlist] = useState<Set<string>>(() => MarketDataService.getWatchlist())
@@ -338,6 +352,16 @@ function App() {
       },
     }))
   }
+
+  useEffect(() => {
+    if (!mobileSearchOpen) return
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileSearchOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [mobileSearchOpen])
 
   // Supabase Auth listener
   useEffect(() => {
@@ -1379,7 +1403,7 @@ function App() {
           </div>
         )
 
-      case 'Performance':
+      case 'Transactions':
         return (
           <div className="space-y-6">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1388,7 +1412,7 @@ function App() {
                   Analytics &amp; Ledger
                 </p>
                 <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">
-                  Portfolio Performance &amp; Ledger
+                  Transactions &amp; Performance
                 </h1>
               </div>
 
@@ -1643,6 +1667,9 @@ function App() {
           />
         )
 
+      case 'Screener':
+        return <FundamentalScreenerView />
+
       case 'Asset Allocation':
         return (
           <div className="space-y-6">
@@ -1831,66 +1858,99 @@ function App() {
               </div>
             </div>
 
-            {/* Milestones Cards Grid */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {portfolio.milestones.map((milestone) => {
-                const reached = summary.marketValue >= milestone.targetAmount
-                const progress = Math.min((summary.marketValue / milestone.targetAmount) * 100, 100)
+            {(() => {
+              const roadmapMilestones = portfolio.milestones
+                .filter((milestone) => milestone.active)
+                .sort((a, b) => a.targetAmount - b.targetAmount)
+              const milestoneCount = roadmapMilestones.length
+              const previousIndex = roadmapMilestones.findLastIndex(
+                (milestone) => summary.marketValue >= milestone.targetAmount,
+              )
+              const nextIndex = Math.min(previousIndex + 1, milestoneCount - 1)
+              const previousTarget = previousIndex >= 0 ? roadmapMilestones[previousIndex].targetAmount : 0
+              const nextTarget = roadmapMilestones[nextIndex]?.targetAmount ?? 0
+              const segmentProgress = nextTarget > previousTarget
+                ? Math.min(Math.max((summary.marketValue - previousTarget) / (nextTarget - previousTarget), 0), 1)
+                : 0
+              const roadmapProgress = milestoneCount > 1
+                ? Math.min(Math.max((Math.max(previousIndex, 0) + segmentProgress) / (milestoneCount - 1), 0), 1) * 100
+                : summary.marketValue >= (roadmapMilestones[0]?.targetAmount ?? Infinity) ? 100 : 0
 
-                return (
-                  <div
-                    key={milestone.id}
-                    className={`rounded-3xl border p-5 shadow-subtle transition ${
-                      reached
-                        ? 'border-emerald-200 bg-emerald-50/40 dark:border-emerald-500/30 dark:bg-emerald-950/20'
-                        : 'border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-900'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {reached ? (
-                          <HiOutlineCheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                        ) : (
-                          <HiOutlineTrophy className="h-5 w-5 text-amber-500" />
-                        )}
-                        <h3 className="text-base font-bold text-slate-900 dark:text-white">{milestone.name}</h3>
-                      </div>
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                          reached
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
-                            : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                        }`}
-                      >
-                        {reached ? 'Achieved' : `${progress.toFixed(0)}%`}
-                      </span>
+              return (
+                <section
+                  aria-label="Milestone progress roadmap"
+                  className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-premium dark:border-slate-800 dark:bg-slate-900 sm:p-7"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900 dark:text-white">Your Wealth Roadmap</h2>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {roadmapMilestones.filter((milestone) => summary.marketValue >= milestone.targetAmount).length} of {milestoneCount} milestones achieved
+                      </p>
                     </div>
-
-                    <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
-                      Target Amount: <strong className="text-slate-900 dark:text-white">{formatCurrency(milestone.targetAmount)}</strong>
-                    </p>
-
-                    <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          reached ? 'bg-emerald-500' : 'bg-gradient-to-r from-amber-500 to-emerald-500'
-                        }`}
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-
-                    <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
-                      <span>{reached ? 'Completed' : `${formatPercent(progress)} attained`}</span>
-                      <span>
-                        {reached
-                          ? 'Unlocked'
-                          : `${formatCurrency(Math.max(milestone.targetAmount - summary.marketValue, 0))} to go`}
-                      </span>
-                    </div>
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                      Current: {formatCurrency(summary.marketValue)}
+                    </span>
                   </div>
-                )
-              })}
-            </div>
+
+                  {milestoneCount ? (
+                    <div className="mt-8 overflow-x-auto pb-3">
+                      <div className="relative min-w-[760px] px-5 pt-1">
+                        <div className="absolute left-5 right-5 top-[13px] h-1 rounded-full bg-slate-200 dark:bg-slate-700" />
+                        <div
+                          className="absolute left-5 top-[13px] h-1 rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-700"
+                          style={{ width: `calc((100% - 40px) * ${roadmapProgress / 100})` }}
+                        />
+                        <div
+                          className="absolute top-[5px] z-10 h-[17px] w-[17px] -translate-x-1/2 rounded-full border-[3px] border-white bg-sky-500 shadow ring-2 ring-sky-500/20 transition-all duration-700 dark:border-slate-900"
+                          style={{ left: `calc(20px + (100% - 40px) * ${roadmapProgress / 100})` }}
+                          title={`Current portfolio value: ${formatCurrency(summary.marketValue)}`}
+                        />
+                        <ol className="relative grid" style={{ gridTemplateColumns: `repeat(${milestoneCount}, minmax(0, 1fr))` }}>
+                          {roadmapMilestones.map((milestone, index) => {
+                            const reached = summary.marketValue >= milestone.targetAmount
+                            const isNext = !reached && (index === 0 || summary.marketValue >= roadmapMilestones[index - 1].targetAmount)
+                            return (
+                              <li key={milestone.id} className="flex min-w-0 flex-col items-center text-center">
+                                <span
+                                  className={`z-10 flex h-7 w-7 items-center justify-center rounded-full border-2 ${
+                                    reached
+                                      ? 'border-emerald-500 bg-emerald-500 text-white'
+                                      : isNext
+                                        ? 'border-sky-500 bg-white text-sky-600 dark:bg-slate-900 dark:text-sky-400'
+                                        : 'border-slate-300 bg-white text-slate-400 dark:border-slate-600 dark:bg-slate-900'
+                                  }`}
+                                  aria-label={`${milestone.name}: ${reached ? 'achieved' : 'not yet achieved'}`}
+                                >
+                                  {reached
+                                    ? <HiOutlineCheckCircle className="h-4 w-4" />
+                                    : <span className="text-[10px] font-bold">{index + 1}</span>}
+                                </span>
+                                <span className={`mt-3 max-w-full truncate text-[11px] font-bold ${
+                                  reached || isNext ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'
+                                }`}>
+                                  {milestone.name}
+                                </span>
+                                <span className="mt-1 text-[10px] tabular-nums text-slate-500 dark:text-slate-400">
+                                  {formatCurrency(milestone.targetAmount)}
+                                </span>
+                                <span className={`mt-1 text-[9px] font-semibold ${
+                                  reached ? 'text-emerald-600 dark:text-emerald-400' : isNext ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400'
+                                }`}>
+                                  {reached ? 'Achieved' : isNext ? 'In progress' : 'Upcoming'}
+                                </span>
+                              </li>
+                            )
+                          })}
+                        </ol>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-6 text-sm text-slate-500 dark:text-slate-400">Add a milestone to start your wealth roadmap.</p>
+                  )}
+                </section>
+              )
+            })()}
           </div>
         )
 
@@ -2313,53 +2373,192 @@ function App() {
   // Authenticated Layout
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 transition-colors duration-200 dark:bg-slate-950 dark:text-slate-100">
-      <div className="mx-auto flex max-w-[1600px]">
+      <header className="fixed inset-x-0 top-0 z-40 h-[72px] border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95">
+        <div className="mx-auto flex h-full max-w-[1600px] items-center gap-1 px-4 sm:gap-3 sm:px-6 lg:px-8">
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+            className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 shadow-sm transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 lg:inline-flex"
+            aria-label={sidebarCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar'}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            <HiOutlineBars3 className="h-5 w-5" />
+          </button>
+          <span className="hidden shrink-0 text-base font-extrabold tracking-tight text-slate-900 lg:block dark:text-white">
+            WealthX
+          </span>
+          <div className="flex shrink-0 items-center gap-2 lg:hidden">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-500 to-sky-500 text-white shadow-sm">
+              <HiOutlineChartPie className="h-5 w-5" />
+            </div>
+            <span className="hidden whitespace-nowrap text-sm font-extrabold tracking-tight text-slate-900 dark:text-white min-[360px]:inline">WealthX</span>
+          </div>
+          <div className="ml-auto hidden min-w-0 w-full max-w-xl lg:block">
+            <GlobalSearch
+              holdings={portfolio.holdings}
+              transactions={portfolio.transactions}
+              milestones={portfolio.milestones}
+              stocks={scannedStocks}
+              pages={navigation}
+              inputId="global-search-desktop"
+              onNavigate={(targetPage, searchTerm) => {
+                const destination = navigation.find((item) => item === targetPage)
+                if (!destination) return
+                setPage(destination)
+                if (destination === 'My Holdings' && searchTerm) setSearchQuery(searchTerm)
+              }}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setMobileSearchOpen(true)}
+            className="ml-auto inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 shadow-sm transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 lg:hidden"
+            aria-label="Open portfolio search"
+          >
+            <HiOutlineMagnifyingGlass className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleTheme()}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 shadow-sm transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 lg:h-10 lg:w-10"
+            title={`Switch to ${isDarkMode ? 'light' : 'dark'} theme`}
+            aria-label={`Switch to ${isDarkMode ? 'light' : 'dark'} theme`}
+          >
+            {isDarkMode ? <HiOutlineSun className="h-4 w-4 text-amber-500" /> : <HiOutlineMoon className="h-4 w-4 text-indigo-500" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setPage('Settings')}
+            className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border shadow-sm transition lg:h-10 lg:w-10 ${
+              page === 'Settings'
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+            }`}
+            aria-label="Settings"
+            title="Settings"
+          >
+            <HiOutlineCog6Tooth className="h-4 w-4" />
+          </button>
+        </div>
+      </header>
+
+      {mobileSearchOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 px-4 pb-8 pt-[max(5rem,10vh)] backdrop-blur-sm lg:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 cursor-default"
+            aria-label="Close search"
+            onClick={() => setMobileSearchOpen(false)}
+          />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-search-title"
+            className="relative z-10 w-full max-w-xl rounded-3xl border border-white/70 bg-white p-4 shadow-2xl shadow-slate-950/20 dark:border-slate-700 dark:bg-slate-950 sm:p-6"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 id="mobile-search-title" className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">Search WealthX</h2>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Find information across your portfolio</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileSearchOpen(false)}
+                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                aria-label="Close search"
+              >
+                <HiOutlineXMark className="h-5 w-5" />
+              </button>
+            </div>
+            <GlobalSearch
+              holdings={portfolio.holdings}
+              transactions={portfolio.transactions}
+              milestones={portfolio.milestones}
+              stocks={scannedStocks}
+              pages={navigation}
+              inputId="global-search-mobile"
+              autoFocus
+              resultsLayout="inline"
+              onNavigate={(targetPage, searchTerm) => {
+                const destination = navigation.find((item) => item === targetPage)
+                if (!destination) return
+                setPage(destination)
+                if (destination === 'My Holdings' && searchTerm) setSearchQuery(searchTerm)
+                setMobileSearchOpen(false)
+              }}
+            />
+          </section>
+        </div>
+      )}
+
+      <div className="mx-auto flex max-w-[1600px] pt-[72px]">
         {/* Desktop Left Sidebar (>= 1024px) */}
-        <aside className="hidden min-h-screen w-72 shrink-0 border-r border-slate-200/80 bg-white p-5 lg:flex lg:flex-col lg:justify-between dark:border-slate-800 dark:bg-slate-900">
+        <aside className={`sticky top-[72px] hidden h-[calc(100vh-72px)] shrink-0 self-start overflow-y-auto border-r border-slate-200/80 bg-white transition-[width,padding] duration-200 lg:flex lg:flex-col lg:justify-between dark:border-slate-800 dark:bg-slate-900 ${
+          sidebarCollapsed ? 'w-20 p-3' : 'w-72 p-5'
+        }`}>
           <div>
             {/* Logo */}
-            <div className="mb-8 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-500 to-sky-500 text-white shadow-md">
+            <div className={`mb-8 flex items-center gap-3 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-500 to-sky-500 text-white shadow-md">
                 <HiOutlineChartPie className="h-5 w-5" />
               </div>
-              <div>
-                <div className="text-base font-extrabold text-slate-900 dark:text-white">WealthScope</div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Portfolio Suite
-                </div>
-              </div>
+              {!sidebarCollapsed && <div className="min-w-0">
+                <div className="text-base font-extrabold text-slate-900 dark:text-white">WealthX</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Personal Finance</div>
+              </div>}
             </div>
 
             {/* Navigation Tabs */}
-            <nav className="space-y-1">
-              {navigation.map((item) => {
-                const Icon = getNavIcon(item)
-                const isActive = page === item
-                return (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setPage(item)}
-                    className={`flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-semibold transition ${
-                      isActive
-                        ? 'bg-emerald-50 text-emerald-700 shadow-sm dark:bg-emerald-950/40 dark:text-emerald-400 ring-1 ring-inset ring-emerald-600/10 dark:ring-emerald-500/20'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Icon className={`h-4 w-4 ${isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
-                      <span>{item}</span>
-                    </div>
-                    {isActive && <HiOutlineChevronRight className="h-3.5 w-3.5 text-emerald-500" />}
-                  </button>
-                )
-              })}
+            <nav aria-label="Main navigation" className="space-y-3">
+              {navigationGroups.map((group, groupIndex) => (
+                <div
+                  key={group.label}
+                  className={groupIndex > 0 ? 'border-t border-slate-100 pt-3 dark:border-slate-800' : ''}
+                >
+                  {!sidebarCollapsed && (
+                    <p className="mb-1.5 px-3.5 text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                      {group.label}
+                    </p>
+                  )}
+                  <div className="space-y-1">
+                    {group.items.map((item) => {
+                      const Icon = getNavIcon(item)
+                      const isActive = page === item
+                      return (
+                        <div key={item} className="group relative">
+                          <button
+                            type="button"
+                            onClick={() => setPage(item)}
+                            aria-label={sidebarCollapsed ? item : undefined}
+                            className={`flex h-10 w-full items-center rounded-xl text-xs font-semibold transition ${
+                              isActive
+                                ? 'bg-emerald-50 text-emerald-700 shadow-sm ring-1 ring-inset ring-emerald-600/10 dark:bg-emerald-950/40 dark:text-emerald-400 dark:ring-emerald-500/20'
+                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
+                            } ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3.5'}`}
+                          >
+                            <span className={`flex min-w-0 items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+                              <Icon className={`h-5 w-5 shrink-0 ${isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
+                              {!sidebarCollapsed && <span className="truncate">{item}</span>}
+                            </span>
+                            {isActive && !sidebarCollapsed && <HiOutlineChevronRight className="h-3.5 w-3.5 shrink-0 text-emerald-500" />}
+                          </button>
+                          {sidebarCollapsed && (
+                            <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 dark:border-slate-700">
+                              {item}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
             </nav>
           </div>
 
           {/* Sidebar Footer */}
           <div className="space-y-3 pt-6">
-            <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3 text-xs dark:border-slate-800 dark:bg-slate-800/40">
+            {!sidebarCollapsed && <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3 text-xs dark:border-slate-800 dark:bg-slate-800/40">
               <div className="flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-300">
                 <HiOutlineShieldCheck className="h-4 w-4 text-emerald-500" />
                 <span>{isSupabaseConfigured ? 'Cloud Sync Active' : 'Private Local Storage'}</span>
@@ -2369,9 +2568,9 @@ function App() {
                   ? 'Authenticated via Supabase'
                   : 'Data stored locally in browser'}
               </p>
-            </div>
+            </div>}
 
-            {!isSupabaseConfigured && (
+            {!isSupabaseConfigured && !sidebarCollapsed && (
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -2393,9 +2592,13 @@ function App() {
             <button
               type="button"
               onClick={handleLogout}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 dark:border-slate-800 dark:bg-slate-900 dark:text-rose-400 dark:hover:bg-rose-950/30"
+              title={sidebarCollapsed ? 'Sign Out' : undefined}
+              aria-label={sidebarCollapsed ? 'Sign Out' : undefined}
+              className={`flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 dark:border-slate-800 dark:bg-slate-900 dark:text-rose-400 dark:hover:bg-rose-950/30 ${
+                sidebarCollapsed ? 'px-0' : ''
+              }`}
             >
-              <HiOutlineArrowRightOnRectangle className="h-4 w-4" /> Sign Out
+              <HiOutlineArrowRightOnRectangle className="h-4 w-4" /> {!sidebarCollapsed && 'Sign Out'}
             </button>
           </div>
         </aside>
@@ -2414,7 +2617,7 @@ function App() {
                     <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500 text-white">
                       <HiOutlineChartPie className="h-5 w-5" />
                     </div>
-                    <span className="font-bold text-slate-900 dark:text-white">WealthScope</span>
+                    <span className="font-bold text-slate-900 dark:text-white">WealthX</span>
                   </div>
                   <button
                     type="button"
@@ -2465,35 +2668,7 @@ function App() {
         )}
 
         {/* Main Content Area */}
-        <main className="min-h-screen flex-1 p-4 sm:p-6 lg:p-8 pb-20 lg:pb-8">
-          <header className="mb-6 flex items-center justify-between gap-4 rounded-3xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-premium sm:px-5 dark:border-slate-800 dark:bg-slate-900">
-            <div aria-hidden="true" className="h-9 flex-1" />
-            <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={() => toggleTheme()}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 shadow-sm transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                title={`Switch to ${isDarkMode ? 'light' : 'dark'} theme`}
-                aria-label={`Switch to ${isDarkMode ? 'light' : 'dark'} theme`}
-              >
-                {isDarkMode ? <HiOutlineSun className="h-4 w-4 text-amber-500" /> : <HiOutlineMoon className="h-4 w-4 text-indigo-500" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => setPage('Settings')}
-                className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border shadow-sm transition ${
-                  page === 'Settings'
-                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-                }`}
-                aria-label="Settings"
-                title="Settings"
-              >
-                <HiOutlineCog6Tooth className="h-4 w-4" />
-              </button>
-            </div>
-          </header>
-
+        <main className="min-h-screen min-w-0 flex-1 p-4 pb-20 sm:p-6 lg:p-8 lg:pb-8">
           {/* Error Banner */}
           {portfolioError && (
             <div role="alert" className="mb-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-700 dark:border-rose-500/20 dark:bg-rose-950/40 dark:text-rose-300">
@@ -2512,7 +2687,7 @@ function App() {
           {[
             { name: 'Dashboard', icon: HiOutlineSquares2X2 },
             { name: 'My Holdings', icon: HiOutlineBriefcase },
-            { name: 'Performance', icon: HiOutlineArrowTrendingUp },
+            { name: 'Screener', icon: HiOutlineChartBar },
             { name: '52W High / Low Scanner', icon: HiOutlineMagnifyingGlass },
           ].map((item) => {
             const Icon = item.icon

@@ -111,6 +111,8 @@ export function createDefaultMilestones(): Milestone[] {
     { id: crypto.randomUUID(), name: '₹25 Lakh', targetAmount: 2500000, order: 4, active: true },
     { id: crypto.randomUUID(), name: '₹50 Lakh', targetAmount: 5000000, order: 5, active: true },
     { id: crypto.randomUUID(), name: '₹1 Crore', targetAmount: 10000000, order: 6, active: true },
+    { id: crypto.randomUUID(), name: '₹2 Crore', targetAmount: 20000000, order: 7, active: true },
+    { id: crypto.randomUUID(), name: '₹5 Crore', targetAmount: 50000000, order: 8, active: true },
   ]
 }
 
